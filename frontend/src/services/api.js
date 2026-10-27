@@ -33,16 +33,19 @@ export async function fetchDayCurves(date, cutoffHour = 11) {
       return await resp.json();
     }
   } catch (err) {
-    console.warn(`Backend API unavailable for ${date}, using fallback day curve.`);
+    console.warn(`Backend API unavailable for ${date} (cutoff ${cutoffHour}), using fallback day curve.`);
   }
 
-  // Fallback to pre-indexed day data
-  if (fallbackBundle.days && fallbackBundle.days[date]) {
-    return fallbackBundle.days[date];
+  // Fallback to pre-indexed day data for the specific cutoffHour
+  const cutoffKey = String(cutoffHour);
+  const cutoffDays = fallbackBundle.days?.[cutoffKey] || fallbackBundle.days?.['11'] || {};
+
+  if (cutoffDays[date]) {
+    return cutoffDays[date];
   }
   
   // If exact date not found, return first available day
-  const firstAvailable = Object.values(fallbackBundle.days || {})[0];
+  const firstAvailable = Object.values(cutoffDays)[0];
   if (firstAvailable) return firstAvailable;
 
   throw new Error(`No data available for ${date}`);
@@ -59,10 +62,11 @@ export async function fetchAnalyticsSummary(startDate = '2026-01-01', endDate = 
       return await resp.json();
     }
   } catch (err) {
-    console.warn('Backend API unavailable for analytics summary, using fallback summary.');
+    console.warn(`Backend API unavailable for analytics summary (cutoff ${cutoffHour}), using fallback summary.`);
   }
 
-  return fallbackBundle.summary;
+  const cutoffKey = String(cutoffHour);
+  return fallbackBundle.summaries?.[cutoffKey] || fallbackBundle.summaries?.['11'] || fallbackBundle.summary;
 }
 
 export async function simulateProcurement({ deliveryDate, cutoffHour = 11, baseDemandMw = 25000, confidenceLevel = 0.90 }) {
@@ -86,13 +90,17 @@ export async function simulateProcurement({ deliveryDate, cutoffHour = 11, baseD
     console.warn('Backend API unavailable for procurement simulation, running client-side simulation.');
   }
 
-  // Client-side simulation fallback
-  return runClientSideProcurementSimulation(deliveryDate, baseDemandMw, confidenceLevel);
+  // Client-side simulation fallback using cutoff-specific data
+  return runClientSideProcurementSimulation(deliveryDate, cutoffHour, baseDemandMw, confidenceLevel);
 }
 
-function runClientSideProcurementSimulation(deliveryDate, baseDemandMw, confidenceLevel) {
-  const dayData = fallbackBundle.days?.[deliveryDate] || Object.values(fallbackBundle.days || {})[0];
-  const quantiles = fallbackBundle.summary?.metrics?.quantiles || {
+function runClientSideProcurementSimulation(deliveryDate, cutoffHour, baseDemandMw, confidenceLevel) {
+  const cutoffKey = String(cutoffHour);
+  const cutoffDays = fallbackBundle.days?.[cutoffKey] || fallbackBundle.days?.['11'] || {};
+  const dayData = cutoffDays[deliveryDate] || Object.values(cutoffDays)[0];
+
+  const summary = fallbackBundle.summaries?.[cutoffKey] || fallbackBundle.summaries?.['11'] || fallbackBundle.summary;
+  const quantiles = summary?.metrics?.quantiles || {
     p50_mw: 1450,
     p75_mw: 2850,
     p90_mw: 4340,
